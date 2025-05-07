@@ -1,0 +1,401 @@
+---
+title: "Other_Theft"
+author: "Zaira Mae"
+date: "2025-03-25"
+output: html_document
+---
+
+```{r}
+library(mgcv)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(spacetime)
+library(sp)
+library(animation)
+library(gstat)
+library(tidygeocoder)
+library(maps)
+library(lubridate)
+library(reshape2)
+library(sf)
+library(corrplot)
+library(pheatmap)
+```
+
+# Load the cleaned dataset
+
+```{r}
+Thft_vhcl <- read.csv("Theft_Vehicle_data.csv")
+Thft_vhcl
+```
+
+Description of the data This data is about one crime type from the original dataset which is the Other Theft (Theft of property that includes personal items like purse, wallet, cellphone, laptop, etc., bicycle, etc.).
+
+Neighborhood: The Vancouver Police Department uses Statistics Canada’s definition of neighbourhoods within municipalities. Neighbourhoods within the City of Vancouver are based on the census tract (CT) concept within the census metropolitan area (CMA).
+
+Year: A four-digit field that indicates the year when the reported crime activity occurred.
+
+Month: A numeric field that indicates the month when the reported crime activity occurred.
+
+Total_Crimes: A total number of crimes that happened in that month from 2010 to 2024 per neighborhood.
+
+# Loading the geojson file
+
+```{r}
+vancouver_geo <- st_read("local-area-boundary.geojson")
+vancouver_geo
+as.data.frame(st_coordinates(st_centroid(vancouver_geo$geometry)))
+vancouver_geo$centroid <- st_centroid(vancouver_geo$geometry)
+```
+
+```{r}
+colnames(Thft_vhcl)
+```
+
+```{r}
+colnames(vancouver_geo)
+```
+
+```{r}
+Thft_vhcl <- Thft_vhcl %>% 
+   rename(name = Neighbourhood)
+colnames(Thft_vhcl)
+```
+
+```{r}
+Thft_vhcl <- Thft_vhcl %>%
+  mutate(Time_Col = make_date(Year, 1))  
+
+```
+
+#Visualization from 2010-2024
+
+```{r}
+# Rename columns to match before joining
+Thft_vhcl <- Thft_vhcl %>% rename()
+
+# Perform the left join
+Thft_vhcl_geo_combination <- left_join(vancouver_geo, Thft_vhcl, by = "name") %>%
+  st_as_sf()
+
+# Print the result
+Thft_vhcl_geo_combination
+```
+
+```{r}
+# Aggregate data by Neighborhood
+visualization <- Thft_vhcl_geo_combination |> 
+  group_by(name) |>  
+  summarise(Total_Crimes = sum(Total_Crimes, na.rm = TRUE))
+
+```
+
+```{r}
+# Compute label positions using st_point_on_surface() for better placement
+Thft_vhcl_visualization <- visualization |> 
+  mutate(label_position = st_point_on_surface(geometry))
+# Create the map with neighborhood names and case counts
+Thft_vhcl_visualization_plot <- ggplot(Thft_vhcl_visualization) +
+  geom_sf(aes(fill = Total_Crimes), color = "black", lwd = 0.15) +
+  scale_fill_viridis_c(option = "magma", direction = -1) +  
+  theme_minimal() +
+
+  # Add Neighborhood names inside the polygons
+  geom_sf_text(aes(geometry = label_position, label = name), size = 3, color = "darkgreen") +  
+
+  # Add Case Count inside polygons
+  geom_sf_text(aes(geometry = label_position, label = Total_Crimes), size = 3, color = "maroon", nudge_y = 0.002)
+
+# Display the map
+Thft_vhcl_visualization_plot
+ggsave("map.png", plot = Thft_vhcl_visualization_plot, width = 6, height = 4, dpi = 300)
+```
+
+```{r}
+#Extract coordinates as a data frame
+coords_df <- as.data.frame(st_coordinates(st_centroid(vancouver_geo$geometry)))
+
+# Rename columns for clarity
+colnames(coords_df) <- c("X", "Y")
+
+```
+
+```{r}
+# First, get the neighborhood centroids with their names
+neighborhood_centroids <- vancouver_geo %>%
+  mutate(
+    
+    X = st_coordinates(st_centroid(geometry))[,1],
+    Y = st_coordinates(st_centroid(geometry))[,2]
+  ) %>%
+  as.data.frame() %>%
+  select(name, X, Y)
+
+# Then merge with your crime data
+combined_data <- Thft_vhcl %>%
+  left_join(neighborhood_centroids, by = "name")
+# Rename the X&Y to longitude and latitude
+combined_data <- combined_data %>%
+  rename(Latitude = Y)
+combined_data <- combined_data %>%
+  rename(Longitude = X)
+
+
+# View the result
+combined_data
+  
+```
+
+```{r}
+combined_data <- combined_data %>%
+  rename(Neighborhood = name)
+head(combined_data)
+```
+
+```{r}
+combined_data$Neighborhood <- as.factor(combined_data$Neighborhood)
+combined_data$Month<-as.factor(combined_data$Month)
+```
+
+```{r}
+# Split the data into training (80%) and test (20%)
+set.seed(123)  # For reproducibility
+
+# Ensure you're using the correct dataframe name (combined_data, not crime)
+train_indices <- sample(seq_len(nrow(combined_data)), size = 0.8 * nrow(combined_data))
+train_data <- combined_data[train_indices, ]
+test_data <- combined_data[-train_indices, ]
+
+# Verify the split
+cat("Training data rows:", nrow(train_data), "\n")
+cat("Test data rows:", nrow(test_data), "\n")
+```
+
+```{r}
+train_data$Month <- as.numeric(train_data$Month)
+```
+
+# --- Fit models ---
+
+```{r}
+Model1 <- gam(Total_Crimes ~ te(Latitude, Longitude, bs = c("tp", "tp"), k = c(12, 12)) +
+                                s(Month, k = 12, bs = "cc"),
+              data = train_data, method = "REML", family = poisson)
+
+```
+
+```{r}
+Model2 <- gam(Total_Crimes ~ te(Month, Longitude, bs = c("cc", "tp"), k = c(12, 12)),
+              data = train_data, method = "REML", family = poisson)
+```
+
+```{r}
+Model3 <- gam(Total_Crimes ~ s(Longitude, k = 12, bs = "tp") +
+                                s(Latitude, k = 12, bs = "tp") +
+                                s(Month, k = 12, bs = "cc"),
+              data = train_data, method = "REML", family = poisson)
+```
+
+# --- Model list ---
+
+```{r}
+models <- list(Model1 = Model1, Model2 = Model2, Model3 = Model3)
+```
+
+# --- Gather evaluation metrics ---
+
+```{r}
+test_data$Month <- as.numeric(test_data$Month)
+```
+
+```{r}
+library(Metrics)
+
+model_results <- lapply(models, function(mdl) {
+  s <- summary(mdl)
+  pred <- predict(mdl, newdata = test_data, type = "response")
+  data.frame(
+    AIC = AIC(mdl),
+    Deviance_Explained = round(s$dev.expl, 4),
+    Adjusted_R2 = round(s$r.sq, 4),
+    RMSE = round(rmse(test_data$Total_Crimes, pred), 4)
+  )
+})
+```
+
+# --- Combine into one table ---
+
+```{r}
+results_table <- bind_rows(model_results, .id = "Model")
+print(results_table)
+```
+
+```{r}
+anova.gam(Model1,Model2,Model3)
+```
+
+# Model 1 :
+
+```{r}
+Model1 <- gam(Total_Crimes ~ te(Latitude,Longitude, bs=c("tp","tp"), k=c(12,12)) + s(Month, k=12),data = train_data, method = "REML", family ="poisson")
+summary(Model1)
+```
+
+#### Checking the Model
+
+```{r}
+gam.check(Model1)
+```
+
+#### Plot the model
+
+```{r}
+# Plot the model, including confidence intervals
+plot(Model1)
+```
+
+```{r}
+library(gratia)
+draw(Model1)
+```
+
+```{r}
+test_data$Month <- as.numeric(test_data$Month)
+```
+
+#### Prediction
+
+```{r}
+test_data$Predicted_Crimes_Model1 <- predict(Model1, newdata = test_data, type = "response")
+
+```
+
+```{r}
+library(ggplot2)
+
+# Define your palette (one color per neighborhood)
+neighs <- unique(test_data$Neighborhood)
+# you could also pick a palette function, e.g. scales::hue_pal()(length(neighs))
+color_palette <- setNames(
+  c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", 
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", 
+    "#c49c94", "#f7b6d2", "#8c564b", "#e377c2", "#7f7f7f",
+    "#bcbd22", "#17becf")[1:length(neighs)],
+  neighs
+)
+
+for(nb in neighs) {
+  df_nb <- subset(test_data, Neighborhood == nb)
+  
+  p <- ggplot(df_nb, aes(x = Month, y = Predicted_Crimes_Model1)) + 
+    geom_line(color = color_palette[nb], size = 1) + 
+    geom_ribbon(
+      aes(
+        ymin = Predicted_Crimes_Model1 * 0.9, 
+        ymax = Predicted_Crimes_Model1 * 1.1
+      ),
+      fill = color_palette[nb],
+      alpha = 0.2
+    ) + 
+    scale_x_continuous(breaks = c(1, 4, 7, 10)) + 
+    labs(
+      title = paste0("Crime Trend: ", nb),
+      x     = "Month",
+      y     = "Predicted Crimes (Model 1)"
+    ) + 
+    theme_minimal() + 
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      axis.title = element_text(face = "bold")
+    )
+  
+  print(p)
+}
+
+```
+
+
+# Model 3:
+```{r}
+Model3 <- gam(Total_Crimes ~ s(Longitude, k = 12, bs = "tp") +
+                                s(Latitude, k = 12, bs = "tp") +
+                                s(Month, k = 12, bs = "cc"),
+              data = train_data, method = "REML", family = poisson)
+```
+
+```{r}
+summary(Model3)
+```
+### Checking the model
+
+```{r}
+gam.check(Model3)
+```
+### Plot the model
+
+```{r}
+plot(Model3)
+```
+```{r}
+library(gratia)
+draw(Model3)
+```
+
+### Prediction
+```{r}
+test_data$Month <- as.numeric(test_data$Month)
+```
+
+
+```{r}
+test_data$Predicted_Crimes_Model3 <- predict(Model3, newdata = test_data, type = "response")
+```
+
+```{r}
+library(ggplot2)
+
+# Define your palette (one color per neighborhood)
+neighs <- unique(test_data$Neighborhood)
+# you could also pick a palette function, e.g. scales::hue_pal()(length(neighs))
+color_palette <- setNames(
+  c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", 
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", 
+    "#c49c94", "#f7b6d2", "#8c564b", "#e377c2", "#7f7f7f",
+    "#bcbd22", "#17becf")[1:length(neighs)],
+  neighs
+)
+
+for(nb in neighs) {
+  df_nb <- subset(test_data, Neighborhood == nb)
+  
+  p <- ggplot(df_nb, aes(x = Month, y = Predicted_Crimes_Model3)) + 
+    geom_line(color = color_palette[nb], size = 1) + 
+    geom_ribbon(
+      aes(
+        ymin = Predicted_Crimes_Model3 * 0.9, 
+        ymax = Predicted_Crimes_Model3 * 1.1
+      ),
+      fill = color_palette[nb],
+      alpha = 0.2
+    ) + 
+    scale_x_continuous(breaks = c(1, 4, 7, 10)) + 
+    labs(
+      title = paste0("Crime Trend: ", nb),
+      x     = "Month",
+      y     = "Predicted Crimes (Model 3)"
+    ) + 
+    theme_minimal() + 
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      axis.title = element_text(face = "bold")
+    )
+  
+  print(p)
+}
+
+
+```
+

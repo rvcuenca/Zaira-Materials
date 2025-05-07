@@ -1,0 +1,17 @@
+% latex table generated in R 4.4.3 by xtable 1.8-4 package
+% Tue May  6 17:58:12 2025
+\begin{table}[ht]
+\centering
+\begin{tabular}{rllrrr}
+\hline
+& Neighborhood & Time\_c & Time & Longitude & Latitude \\ 
+\hline
+1 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+2 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+3 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+4 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+5 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+6 & Arbutus Ridge & 2003-01-01 & 0.00 & -123.16 & 49.25 \\ 
+\hline
+\end{tabular}
+\end{table}

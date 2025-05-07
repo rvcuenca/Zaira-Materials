@@ -1,0 +1,417 @@
+---
+title: "vncvrcrm_prt3"
+author: "Zaira Mae"
+date: "2025-03-16"
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+#### Load the packages
+
+```{r}
+library(mgcv)
+library(tidyr)
+library(spacetime)
+library(sp)
+library(animation)
+library(gstat)
+library(tidygeocoder)
+library(maps)
+library(lubridate)
+library(reshape2)
+library(sf)
+library(tidyverse)
+library(corrplot)
+library(pheatmap)
+library(dplyr)
+library(ggplot2)
+library(janitor)
+```
+# Preprocessing
+#### Load the dataset
+
+```{r}
+# Load the dataset (update the file path)
+crime <- read.csv("Raw_data_crime.csv")
+```
+
+
+```{r}
+crime %>% 
+  with(summary(X))
+crime %>% 
+  with(summary(Y))
+```
+
+
+
+```{r}
+# # Install required packages if not already installed
+# if (!require(sf))        install.packages("sf")
+# if (!require(dplyr))     install.packages("dplyr")
+# 
+# library(sf)
+# library(dplyr)
+
+# 1. Read City of Vancouver’s 22 local-area boundaries
+city_url <- "https://opendata.vancouver.ca/api/v2/catalog/datasets/local-area-boundary/exports/geojson"
+city_nbhds <- st_read(city_url, quiet = TRUE) %>%
+  rename(name = name)  # adjust if attribute differs
+
+# 2. Read Parks polygon dataset and filter for Stanley Park
+parks_url <- "https://opendata.vancouver.ca/api/v2/catalog/datasets/parks-polygon-representation/exports/geojson"
+parks <- st_read(parks_url, quiet = TRUE)
+stanley_park <- parks %>%
+  filter(park_name == "Stanley Park") %>%
+  select(name = park_name, geometry)
+
+# 3. Create Musqueam Reserve point from official centroid coordinates
+musqueam_coords <- data.frame(
+  name = "Musqueam Reserve",
+  lon  = -123.217778,
+  lat  =  49.233056
+)
+musqueam_point <- st_as_sf(
+  musqueam_coords,
+  coords = c("lon", "lat"),
+  crs    = 4326
+)
+
+# 4. Ensure all layers use WGS84 (EPSG:4326)
+city_nbhds    <- st_transform(city_nbhds,    4326)
+stanley_park  <- st_transform(stanley_park,  4326)
+musqueam_point<- st_transform(musqueam_point,4326)
+
+# 5. Combine into one sf object (24 areas)
+vpd_24_areas <- bind_rows(
+  city_nbhds    %>% select(name, geometry),
+  stanley_park,
+  musqueam_point
+) %>%
+  st_as_sf()
+
+# 6. Export the merged dataset as GeoJSON
+st_write(vpd_24_areas, "vpd_24_areas.geojson", delete_dsn = TRUE)
+
+# 1. Compute centroids of each polygon feature
+vpd_centroids <- vpd_24_areas %>%
+  st_centroid()  # Point geometries at each feature's center
+
+# 2. Extract longitude (X) and latitude (Y) into new columns
+vpd_with_coords <- vpd_centroids %>%
+  mutate(
+    Longitude = st_coordinates(geometry)[, 1],
+    Latitude  = st_coordinates(geometry)[, 2]
+  )
+
+# 3. Drop the geometry column to work with a plain data frame
+vpd_df <- vpd_with_coords %>%
+  st_drop_geometry()
+
+# 4. Select and rename to create the final tibble
+vpd_tibble <- vpd_df %>%
+  select(
+    name,
+    Longitude,
+    Latitude
+  ) %>%
+  as_tibble() %>% # Ensure output is a tibble
+  mutate(across(name,~case_when(
+    .x == "Downtown" ~ "Central Business District",
+    .x == "Musqueam Reserve" ~ "Musqueam",
+    T ~ .x
+  ))) 
+
+```
+
+
+```{r}
+crime %>% 
+  drop_na(any_of(c("X","Y"))) %>% #tabyl(TYPE) %>% pull(TYPE) %>% str_c("\'",.,"\'", collapse = ", ") %>% writeClipboard()
+  filter(TYPE %in% c('Theft from Vehicle')) %>% 
+  # filter(TYPE %in% c('Theft from Vehicle', 'Theft of Bicycle', 'Theft of Vehicle', 'Vehicle Collision or Pedestrian Struck (with Fatality)', 'Vehicle Collision or Pedestrian Struck (with Injury)')) %>% 
+  st_as_sf(coords = c("X","Y"),
+           crs    = 26910,
+           remove = TRUE) %>%   # keep X/Y in the output
+  st_transform(crs = 4326) %>% 
+  mutate(
+    Longitude = st_coordinates(geometry)[,1],
+    Latitude  = st_coordinates(geometry)[,2]
+  ) %>%
+  st_drop_geometry() %>% 
+  filter(
+    str_detect(HUNDRED_BLOCK, "^\\s*$", negate = T) &
+    str_detect(NEIGHBOURHOOD, "^\\s*$", negate = T)
+    ) %>% 
+  mutate(
+    Occurred = make_datetime(year = YEAR, month = MONTH, day = DAY, hour = HOUR, min = MINUTE, tz = "America/Vancouver")
+  ) -> crime_clean
+  
+```
+
+
+```{r}
+crime_clean %>% 
+  select(!c(Longitude:Latitude)) %>% 
+  left_join(vpd_tibble, by = join_by(NEIGHBOURHOOD == name)) %>% 
+  mutate(Occurred = floor_date(Occurred, unit = "month")) %>% 
+  count(NEIGHBOURHOOD,Longitude,Latitude,Occurred) %>% 
+  arrange(desc(n)) %>% 
+  rename(Neighborhood = 1, Time = Occurred, TC=n) -> final_dt
+
+# %>% 
+#   ggplot(aes(x = month, y = count)) +
+#   geom_line(size = 1) +
+#   geom_point(size = 2) +
+#   scale_x_date(
+#     date_breaks = "1 month",
+#     date_labels = "%b %Y",
+#     expand = expansion(add = c(0, 0))
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     panel.grid.minor = element_blank()
+#   ) +
+#   labs(
+#     title = "Monthly Event Counts",
+#     subtitle = "Aggregated with lubridate::floor_date()",
+#     x = "Month",
+#     y = "Number of Events"
+#   )
+```
+
+
+```{r}
+final_dt %>% 
+  mutate(Time_c = as.numeric(difftime(Time, min(Time), units = "weeks"))/52, .before = TC) %>%
+  arrange(Neighborhood,Time_c) -> zaira_data
+
+# %>% 
+#   filter(Neighborhood %>% str_detect("^(?i)central")) %>% 
+#   with(plot(Time,TC, type = "l"))
+```
+
+
+```{r}
+saveRDS(zaira_data,"zaira_data.rds")
+```
+
+
+```{r}
+crime_clean %>% 
+  select(!c(Longitude:Latitude)) %>% 
+  left_join(vpd_tibble, by = join_by(NEIGHBOURHOOD == name)) %>% 
+  mutate(Occurred = floor_date(Occurred, unit = "month")) %>% 
+  select(!(1:7)) %>% 
+  rename(Neighborhood = 1, Time_c = Occurred) %>% 
+  mutate(Time = as.numeric(difftime(Time_c, min(Time_c), units = "weeks"))/52, .before = Longitude) %>%
+  arrange(Neighborhood,Time) -> cristine_data
+
+saveRDS(cristine_data,"cristine_data.rds")
+```
+
+
+```{r}
+cristine_data %>% 
+  head %>% 
+  mutate(across(Time_c,as.character)) %>% 
+  xtable::xtable() %>% 
+  capture.output() %>% 
+  writeClipboard()
+```
+
+
+
+
+```{r}
+vpd_tibble %>% 
+  arrange(name) %>% 
+  mutate(across(name,~case_when(
+    .x == "Downtown" ~ "Central Business District",
+    .x == "Musqueam Reserve" ~ "Musqueam",
+    T ~ .x
+  ))) %>% 
+  bind_cols({
+    crime_clean %>% count(NEIGHBOURHOOD) %>% arrange(NEIGHBOURHOOD)
+  }) 
+```
+
+
+
+Arbutus Ridge
+Central Business District
+Dunbar-Southlands
+Fairview
+Grandview-Woodland
+Hastings-Sunrise
+Kensington-Cedar Cottage
+Kerrisdale
+Killarney
+Kitsilano
+Marpole
+Mount Pleasant
+Musqueam
+Oakridge
+Renfrew-Collingwood
+Riley Park
+Shaughnessy
+South Cambie
+Stanley Park
+Strathcona
+Sunset
+Victoria-Fraserview
+West End
+West Point Grey
+
+
+
+```{r}
+#column names
+names(crime)
+```
+
+```{r}
+# CAPSLOCK to title case
+colnames(crime) <- str_to_title(colnames(crime))
+```
+
+```{r}
+glimpse(crime)
+```
+
+```{r}
+# checking if there are rows where there is no information about its neighborhood
+crime %>% 
+  filter(is.na(Neighbourhood))
+```
+
+```{r}
+# filter out only the rows that have information about its neighborhood
+crime <- crime %>% 
+  filter(!is.na(Neighbourhood))
+
+```
+
+```{r}
+# checking the total number of each crimes from 2003-2025
+crime %>% 
+  count(Type, name = "Total_Crimes") %>%
+  arrange(desc(Total_Crimes))
+
+```
+
+Notes:
+
+Central Business District is under the neighborhood Downtown.
+
+Dunbar-Southlands is home to the Musqueam First Nation land. Musqueam is a First Nation people and their territory, which translates to “place of the river grass” or “people of the river grass”.
+
+Stanley Park in Vancouver is located within the city’s West End neighborhood, a peninsula surrounded by water on three sides.
+
+
+```{r}
+# recoding the neighborhoods
+recoded_crime <- crime |>
+  mutate(Neighbourhood = recode(Neighbourhood,
+                               "Central Business District" = "Downtown",
+                               "Musqueam" = "Dunbar-Southlands",
+                               "Stanley Park" = "West End"))
+```
+
+```{r}
+recoded_crime %>% 
+  distinct(Neighbourhood)
+```
+
+Since we are only interested in some of the specific variables in data which is the following:
+
+Type - The type of crime activities. We will filter out the Other Theft type of crime only to explore.
+
+Year - the year when the reported crime activity occurred from 2003-2025 (but since we are interested only from 2010-2024, we will filter out that part only).
+
+Month - the month when the reported crime activity occurred.
+
+Neighborhood - Neighbourhoods within the City of Vancouver are based on the census tract (CT) concept within census metropolitan area (CMA).
+
+X =
+
+```{r}
+# 2016-2024
+crime_2010_2024 <- recoded_crime %>%
+  filter(Year >= 2010 & Year <= 2024)
+```
+
+```{r}
+# checking how many years are there
+crime_2010_2024 %>% 
+  distinct(Year) %>% 
+  arrange(desc(Year))
+```
+
+```{r}
+# checking the total number of each crimes from 2010-2024
+crime_2010_2024 %>% 
+  count(Type, name = "Total_Crimes") %>%
+  arrange(desc(Total_Crimes))
+```
+
+```{r}
+# select the rows where the type of crime is 'Theft from Vehicle'
+theft_Vehicle <- crime_2010_2024 %>% 
+  filter(Type == "Theft from Vehicle")
+
+```
+
+```{r}
+# Aggregate the data by its neighbourhood, year, and month
+theft_Vehicle <- theft_Vehicle %>% 
+  group_by(Neighbourhood,Month) %>%
+  summarize(Total_Crimes = n(), .groups = "drop") 
+
+```
+
+```{r}
+# checking the dataset if all years have 22 total number of neighborhood
+ theft_Vehicle %>%
+  group_by(Year, Month) %>%
+  summarise(Unique_Neighborhoods = n_distinct(Neighbourhood), .groups = "drop")
+
+```
+
+```{r}
+# since there are missing neighborhood in some months from 2010-2024, we will need to fill those neighborhoods with 0 total crimes
+theft_Vehicle_complete <- theft_Vehicle %>%
+  complete(Neighbourhood, Year, Month, fill = list(Total_Crimes = 0))
+```
+
+```{r}
+# checking again to ensure that there are 22 unique neighborhoods per month every year from 2010-2024
+theft_Vehicle_complete %>% 
+  group_by(Year, Month) %>%
+  summarise(Unique_Neighborhoods = n_distinct(Neighbourhood), .groups = "drop")
+
+```
+
+```{r}
+# Checking the 0 total_Crimes
+theft_Vehicle_complete %>% 
+  filter(Total_Crimes == 0)
+```
+
+```{r}
+# checking if there are 12 unique months per month every year from 2010-2024
+theft_Vehicle_complete %>% 
+  group_by(Year) %>%
+  summarise(Unique_Month = n_distinct(Month), .groups = "drop")
+```
+
+```{r}
+write_csv(theft_Vehicle_complete, "theft_Vehicle_data.csv")
+```
+
+For fitting the model, I first split the dataset into training and testing sets. Then used the training data to fit the model using the gam() from \textbf{mgcv} version 1.9-1 package where the response variable was the total number of crimes. For capturing the spatial patterns, I included tensor product smoother for latitude and longitude coordinates which can create interactions between two covariates with different smoothers or degrees of smoothness assumed for each covariates. Using thin plate regression spline with 12 basis function for each dimension this allowed the model to flexibility represent the spatial variation across the study area. To account for seasonal effects, I also included a smooth term for month, enabling the model to capture monthly fluctuations in crime rates. The model assume a poisson distribution since the response variable involved a count data, throughout the example i use restricted maximum likelihood (REML) to estimate model coefficients and smoothing parameters.This approach helped to ensure that the spatial and seasonal structures were properly captured the model without overfitting. 

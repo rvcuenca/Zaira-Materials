@@ -1,0 +1,130 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%% a_thesis.tex
+%%%% undergraduate student version 2024.09
+%%%% Original script by: Julius V. Benitez, Ph.D.
+%%%% Updated by: Karlo S. Orge and Rey R. Cuenca
+%%%% Department of Mathematics and Statistics
+%%%% College of Science and Mathematics
+%%%% MSU-Iligan Institute of Technology
+%%%% 9200 Iligan City, Philippines
+%%%% E-mail: karlo.orge@g.msuiit.edu.ph
+%%%%         rey.cuenca@g.msuiit.edu.ph
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%% To ensure a smooth build, it is recommended to 
+%%%% use TeXstudio as a LaTeX editor. You can
+%%%% download TeXstudio from the following website:
+%%%% https://www.texstudio.org/
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% !BIB TS-program = biber
+\documentclass[12pt]{maththesis}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+%LOAD PACKAGES HERE
+\usepackage[left=1.5in,top=1.8in,right=1.25in,bottom=1.25in,a4paper]{geometry}
+\usepackage{graphtex}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+%BIBLIOGRAPHY MANAGEMENT
+\usepackage[backend=biber, style=apa]{biblatex}
+\addbibresource{bibliography.bib}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%THEOREM-LIKE ENVIRONMENTS
+\newtheorem{thm}{Theorem}[section]
+\newtheorem{cor}[thm]{Corollary}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{conj}[thm]{Conjecture}
+
+\theorembodyfont{\normalfont}
+\newtheorem{defn}[thm]{Def{i}nition}
+\newtheorem{rmk}[thm]{Remark}
+\newtheorem{ex}[thm]{Example}
+\newtheorem{ill}[thm]{Illustration}
+
+\theoremstyle{nonumberplain}
+\theoremheaderfont{\it}
+\theoremsymbol{\ensuremath\square}
+\newtheorem{proof}{Proof:}
+\newtheorem{soln}{Solution:}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%CUSTOM SHORTCUT COMMANDS
+%ADD YOUR OWN HERE
+\def\R{\mathbb{R}}
+\def\Q{\mathbb{Q}}
+\def\N{\mathbb{N}}
+\def\Z{\mathbb{Z}}
+\def\ds{\displaystyle}
+\def\nid{\noindent}
+\def\np{\newpage}
+\def\lb{\linebreak}
+\def\nid{\noindent}
+\newcommand{\pt}{{$\!\!\!$\bf.$\,\,\,$}}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%Basic information and degree specification
+\def\title{SPATIOTEMPORAL ANALYSIS OF VANCOUVER CRIME USING GENERALIZED ADDITIVE MODEL (GAM)
+} %in capital letters
+\def\author{ZAIRA MAE L. BEDOL} %in capital letters
+\def\program{Bachelor of Science in Mathematics/Statistics} %full name of degree
+\def\papertype{AN UNDERGRADUATE THESIS}
+\def\adviser{REY R. CUENCA, M.Sc.} %name in capital letters
+\def\panelone{PANEL ONE M. LAST NAME, Ph.D.} %name in capital letters
+\def\paneltwo{PANEL TWO M. LAST NAME, M.S.} %name in capital letters
+\def\deptchair{SHEILA M. MENCHAVEZ, Ph.D.} %name in capital letters
+\def\csmdean{JAN MICKELLE V. MARATAS, Ph.D.} %name in capital letters
+\def\ddate{MAY 2025} %month and year of the submission of the hard-bound copy of the paper, e.g., June 2024
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%Metadata Stuff
+\hypersetup{
+	pdftitle={\title},
+	pdfauthor={\author; \adviser},
+	pdflang={English},
+	pdfsubject={\program},
+	pdfcreator={\LaTeX\ via maththesis ugv2024.09}
+}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%Document Starts Here
+\begin{document}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+% front matter
+\pagenumbering{roman}
+\setcounter{page}{1}
+\input{titlepage}\newpage
+\input{approval}\newpage
+\input{abstract}\newpage
+\input{dedication}\newpage
+\input{acknowledgment}\newpage
+\tableofcontents
+\addtocontents{toc}{\protect\thispagestyle{plain}}\newpage
+\input{listofnotations}\newpage
+\listoffigures
+\addtocontents{lof}{\protect\thispagestyle{plain}}\newpage
+\listoftables
+\addtocontents{lot}{\protect\thispagestyle{plain}}\newpage
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+%main matter
+\pagestyle{myheadings}
+\pagenumbering{arabic}
+\setcounter{page}{1}
+{\baselineskip=2\baselineskip
+\include{chapter1}
+\include{chapter2}
+\include{chapter3}
+\include{chapter4}
+\include{chapter5}
+\include{chapter6}
+\include{summary}
+}
+%- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+%back matter
+\setlength\bibitemsep{1.5\itemsep}
+\printbibliography[title={BIBLIOGRAPHY}, heading=bibintoc]
+%\renewcommand{\appendixtocname}{APPENDIX}
+%\begin{appendices}
+%\baselineskip=2\baselineskip
+%\include{appendix}
+%\include{appendix2}
+%\end{appendices}
+\include{cv}
+\include{caa}
+\end{document}
